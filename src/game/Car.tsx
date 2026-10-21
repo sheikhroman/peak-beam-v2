@@ -1,10 +1,10 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { useGame } from '../store'
+import { CARS, useGame } from '../store'
 import type { Controls } from './Experience'
 
 const tmpDir = new THREE.Vector3()
@@ -14,19 +14,47 @@ const tmpCam = new THREE.Vector3()
 const ACCEL = 30
 const NITRO_ACCEL = 62
 const BRAKE = 34
+const BASE_TOP_SPEED = 46 // m/s before multiplier (~165 km/h)
+
+function resetCar(b: RapierRigidBody) {
+  b.setTranslation({ x: 55, y: 1.4, z: 0 }, true)
+  b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
+  b.setLinvel({ x: 0, y: 0, z: 0 }, true)
+  b.setAngvel({ x: 0, y: 0, z: 0 }, true)
+}
 
 export function Car() {
   const body = useRef<RapierRigidBody>(null)
   const getKeys = useKeyboardControls<Controls>()[1]
+  const carIndex = useGame((s) => s.carIndex)
+  const spec = CARS[carIndex]
   const nitro = useRef(100)
   const lastHit = useRef(0)
   const frame = useRef(0)
+  const prevCar = useRef(carIndex)
+
+  // keys 1..6 switch car variant
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const n = parseInt(e.key, 10)
+      if (n >= 1 && n <= CARS.length) useGame.getState().setCar(n - 1)
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
 
   useFrame((state, dtRaw) => {
     const b = body.current
     if (!b) return
     const dt = Math.min(dtRaw, 1 / 30)
     const k = getKeys()
+
+    // respawn at start line when the car variant changes
+    if (prevCar.current !== carIndex) {
+      prevCar.current = carIndex
+      resetCar(b)
+      useGame.getState().resetDamage()
+    }
 
     // forward vector from the body's orientation
     const r = b.rotation()
@@ -36,10 +64,17 @@ export function Car() {
     const v = b.linvel()
     const speed = Math.hypot(v.x, v.z)
 
+    // --- top speed cap (per-variant) ---
+    const maxV = BASE_TOP_SPEED * spec.topSpeed
+    if (speed > maxV) {
+      const s = maxV / speed
+      b.setLinvel({ x: v.x * s, y: v.y, z: v.z * s }, true)
+    }
+
     // --- throttle / nitro / brake ---
     const boosting = k.nitro && k.forward && nitro.current > 0.5
     if (k.forward) {
-      const a = boosting ? NITRO_ACCEL : ACCEL
+      const a = (boosting ? NITRO_ACCEL : ACCEL) * spec.accel
       b.applyImpulse({ x: tmpDir.x * a * dt, y: 0, z: tmpDir.z * a * dt }, true)
     }
     if (k.back) {
@@ -51,7 +86,7 @@ export function Car() {
     const steer = (k.left ? 1 : 0) - (k.right ? 1 : 0)
     const authority = Math.min(speed / 9, 1)
     if (steer !== 0 && authority > 0.04) {
-      const grip = k.drift ? 0.45 : 1
+      const grip = (k.drift ? 0.45 : 1) * spec.grip
       b.applyTorqueImpulse({ x: 0, y: steer * 16 * authority * grip * dt, z: 0 }, true)
     }
 
@@ -60,12 +95,9 @@ export function Car() {
       ? Math.max(0, nitro.current - 30 * dt)
       : Math.min(100, nitro.current + 7 * dt)
 
-    // --- reset to start line ---
+    // --- manual reset ---
     if (k.reset) {
-      b.setTranslation({ x: 55, y: 1.4, z: 0 }, true)
-      b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
-      b.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      b.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      resetCar(b)
       useGame.getState().resetDamage()
     }
 
@@ -82,7 +114,7 @@ export function Car() {
     frame.current += 1
     if (frame.current % 6 === 0) {
       useGame.getState().set({
-        speed: Math.round(speed * 3.6),
+        speed: Math.round(Math.min(speed, maxV) * 3.6),
         nitro: Math.round(nitro.current),
       })
     }
@@ -104,10 +136,10 @@ export function Car() {
         s.set({ damage: Math.min(100, s.damage + 5), lastImpact: now })
       }}
     >
-      {/* chassis */}
+      {/* chassis — color follows the selected variant */}
       <mesh castShadow>
         <boxGeometry args={[2, 0.55, 4.2]} />
-        <meshStandardMaterial color="#e11d48" metalness={0.65} roughness={0.3} />
+        <meshStandardMaterial color={spec.color} metalness={0.65} roughness={0.3} />
       </mesh>
       {/* cabin */}
       <mesh castShadow position={[0, 0.5, 0.35]}>
