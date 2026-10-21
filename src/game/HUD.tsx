@@ -1,11 +1,15 @@
-import { Gauge, Zap, Wrench } from 'lucide-react'
-import { useGame } from '../store'
+import { Gauge, Zap, Wrench, Sun, Moon } from 'lucide-react'
+import { CARS, useGame } from '../store'
 
 export function HUD() {
   const speed = useGame((s) => s.speed)
   const nitro = useGame((s) => s.nitro)
   const damage = useGame((s) => s.damage)
   const lastImpact = useGame((s) => s.lastImpact)
+  const mode = useGame((s) => s.mode)
+  const toggleMode = useGame((s) => s.toggleMode)
+  const carIndex = useGame((s) => s.carIndex)
+  const setCar = useGame((s) => s.setCar)
   const showFlash = Date.now() - lastImpact < 700
 
   return (
@@ -20,6 +24,46 @@ export function HUD() {
         <p className="mt-1 text-[11px] uppercase tracking-widest text-white/40">
           Wangan Expressway — v2 prototype
         </p>
+      </div>
+
+      {/* day / night toggle */}
+      <button
+        onClick={toggleMode}
+        className="pointer-events-auto absolute left-5 top-24 flex items-center gap-2 rounded-lg bg-black/45 px-3 py-2 text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/65"
+        title="Day / night"
+      >
+        {mode === 'night' ? (
+          <>
+            <Sun size={15} className="text-amber-300" /> DAY
+          </>
+        ) : (
+          <>
+            <Moon size={15} className="text-sky-300" /> NIGHT
+          </>
+        )}
+      </button>
+
+      {/* car variants */}
+      <div className="absolute left-5 top-36 rounded-lg bg-black/45 p-3 backdrop-blur-sm">
+        <div className="mb-2 text-[11px] font-bold tracking-wider text-white/80">
+          {CARS[carIndex].name.toUpperCase()}
+        </div>
+        <div className="pointer-events-auto flex gap-2">
+          {CARS.map((c, i) => (
+            <button
+              key={c.name}
+              onClick={() => setCar(i)}
+              title={`${c.name} (${i + 1})`}
+              className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                i === carIndex
+                  ? 'border-white shadow-[0_0_10px_rgba(255,255,255,0.7)]'
+                  : 'border-white/20'
+              }`}
+              style={{ backgroundColor: c.color }}
+            />
+          ))}
+        </div>
+        <div className="mt-2 text-[10px] text-white/40">keys 1–6</div>
       </div>
 
       {/* controls help */}
