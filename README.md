@@ -16,6 +16,8 @@ Starter scaffold for a 3D arcade highway racer, built from scratch with the mode
 ## What's already working
 
 - 🚗 Drivable car (WASD/arrows) with arcade throttle, brake/reverse and speed-scaled steering
+- 🎨 6 car variants — different colors + tuned stats (accel / top speed / grip); switch with keys 1–6 or the HUD picker
+- 🌗 Day / night mode — toggle in HUD; lighting, sky, fog, bloom and stars all adapt
 - 🌀 Handbrake drift (Space) — loosens rear grip
 - ⚡ Nitrous boost (Shift) with draining/refilling tank
 - 🧱 Guardrail collisions via Rapier — damage meter + red impact flash, `R` resets
