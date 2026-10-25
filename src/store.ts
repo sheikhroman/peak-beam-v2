@@ -62,7 +62,7 @@ export const useGame = create<GameState>((set) => ({
   nitro: 100,
   damage: 0,
   lastImpact: 0,
-  mode: 'night',
+  mode: 'day',
   carIndex: 0,
   lap: 1,
   lapTime: 0,
