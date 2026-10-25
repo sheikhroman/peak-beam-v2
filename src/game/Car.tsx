@@ -37,9 +37,11 @@ export function Car() {
   const prevAngle = useRef(0)
   const totalAngle = useRef(0)
   const lapStart = useRef(performance.now())
+  const spawnTime = useRef(performance.now())
 
   function resetRace(b: RapierRigidBody) {
     resetCar(b)
+    spawnTime.current = performance.now()
     prevAngle.current = 0
     totalAngle.current = 0
     lapStart.current = performance.now()
@@ -187,6 +189,9 @@ export function Car() {
       enabledRotations={[false, true, false]}
       onCollisionEnter={() => {
         const now = performance.now()
+        // Landing on the ground at spawn/reset is not a crash — ignore
+        // collisions for the first 2 seconds after (re)spawning.
+        if (now - spawnTime.current < 2000) return
         if (now - lastHit.current < 500) return
         lastHit.current = now
         const s = useGame.getState()
