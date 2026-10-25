@@ -33,10 +33,28 @@ interface GameState {
   lastImpact: number
   mode: DayMode
   carIndex: number
+  /** current lap, starting at 1 */
+  lap: number
+  /** ms elapsed in the current lap, synced at ~10Hz */
+  lapTime: number
+  /** last completed lap in ms, or null */
+  lastLap: number | null
+  /** best completed lap in ms, or null */
+  bestLap: number | null
+  paused: boolean
+  muted: boolean
+  /** car position on the ring, synced at ~10Hz, for the minimap */
+  posX: number
+  posZ: number
+  /** increments when the HUD asks for a full race restart */
+  resetToken: number
   set: (p: Partial<GameState>) => void
   toggleMode: () => void
   setCar: (i: number) => void
   resetDamage: () => void
+  togglePause: () => void
+  toggleMute: () => void
+  requestReset: () => void
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -46,8 +64,20 @@ export const useGame = create<GameState>((set) => ({
   lastImpact: 0,
   mode: 'night',
   carIndex: 0,
+  lap: 1,
+  lapTime: 0,
+  lastLap: null,
+  bestLap: null,
+  paused: false,
+  muted: false,
+  posX: 55,
+  posZ: 0,
+  resetToken: 0,
   set: (p) => set(p),
   toggleMode: () => set((s) => ({ mode: s.mode === 'day' ? 'night' : 'day' })),
   setCar: (i) => set({ carIndex: Math.max(0, Math.min(CARS.length - 1, i)) }),
   resetDamage: () => set({ damage: 0 }),
+  togglePause: () => set((s) => ({ paused: !s.paused })),
+  toggleMute: () => set((s) => ({ muted: !s.muted })),
+  requestReset: () => set((s) => ({ resetToken: s.resetToken + 1 })),
 }))
