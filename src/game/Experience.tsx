@@ -20,6 +20,7 @@ const keyMap: { name: Controls; keys: string[] }[] = [
 
 export function Experience() {
   const night = useGame((s) => s.mode) === 'night'
+  const paused = useGame((s) => s.paused)
 
   return (
     <KeyboardControls map={keyMap}>
@@ -54,7 +55,7 @@ export function Experience() {
           <Stars radius={320} depth={60} count={4500} factor={4} fade speed={0.4} />
         )}
 
-        <Physics gravity={[0, -24, 0]}>
+        <Physics gravity={[0, -24, 0]} paused={paused}>
           <Track />
           <Car />
         </Physics>
