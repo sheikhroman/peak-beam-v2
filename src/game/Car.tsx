@@ -6,6 +6,7 @@ import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { CARS, useGame } from '../store'
 import type { Controls } from './Experience'
+import { updateEngine } from './sound'
 
 const tmpDir = new THREE.Vector3()
 const tmpQuat = new THREE.Quaternion()
@@ -32,12 +33,28 @@ export function Car() {
   const lastHit = useRef(0)
   const frame = useRef(0)
   const prevCar = useRef(carIndex)
+  const prevReset = useRef(useGame.getState().resetToken)
+  const prevAngle = useRef(0)
+  const totalAngle = useRef(0)
+  const lapStart = useRef(performance.now())
 
-  // keys 1..6 switch car variant
+  function resetRace(b: RapierRigidBody) {
+    resetCar(b)
+    prevAngle.current = 0
+    totalAngle.current = 0
+    lapStart.current = performance.now()
+    const s = useGame.getState()
+    s.resetDamage()
+    s.set({ lap: 1, lapTime: 0, posX: 55, posZ: 0 })
+  }
+
+  // keys 1..6 switch car variant, P pause, M mute
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const n = parseInt(e.key, 10)
       if (n >= 1 && n <= CARS.length) useGame.getState().setCar(n - 1)
+      else if (e.key === 'p' || e.key === 'P') useGame.getState().togglePause()
+      else if (e.key === 'm' || e.key === 'M') useGame.getState().toggleMute()
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
@@ -48,12 +65,34 @@ export function Car() {
     if (!b) return
     const dt = Math.min(dtRaw, 1 / 30)
     const k = getKeys()
+    const gs = useGame.getState()
+
+    // HUD-requested restart
+    if (prevReset.current !== gs.resetToken) {
+      prevReset.current = gs.resetToken
+      resetRace(b)
+    }
 
     // respawn at start line when the car variant changes
     if (prevCar.current !== carIndex) {
       prevCar.current = carIndex
-      resetCar(b)
-      useGame.getState().resetDamage()
+      resetRace(b)
+    }
+
+    // --- chase camera (kept live even while paused) ---
+    const pr = b.rotation()
+    tmpQuat.set(pr.x, pr.y, pr.z, pr.w)
+    const pp = b.translation()
+    tmpCam.set(0, 4.4, 10.5).applyQuaternion(tmpQuat)
+    state.camera.position.lerp(
+      new THREE.Vector3(pp.x + tmpCam.x, pp.y + tmpCam.y, pp.z + tmpCam.z),
+      1 - Math.pow(0.0005, dt),
+    )
+    state.camera.lookAt(pp.x, pp.y + 1.4, pp.z)
+
+    if (gs.paused) {
+      updateEngine(0, false, gs.muted, true)
+      return
     }
 
     // forward vector from the body's orientation
@@ -63,9 +102,31 @@ export function Car() {
 
     const v = b.linvel()
     const speed = Math.hypot(v.x, v.z)
+    const p0 = b.translation()
 
-    // --- top speed cap (per-variant) ---
-    const maxV = BASE_TOP_SPEED * spec.topSpeed
+    // --- lap tracking: cumulative angle around the ring ---
+    const ang = Math.atan2(p0.z, p0.x)
+    let dAng = ang - prevAngle.current
+    if (dAng > Math.PI) dAng -= Math.PI * 2
+    if (dAng < -Math.PI) dAng += Math.PI * 2
+    prevAngle.current = ang
+    totalAngle.current += dAng
+    if (Math.abs(totalAngle.current) >= Math.PI * 2) {
+      const now = performance.now()
+      const lapMs = Math.round(now - lapStart.current)
+      lapStart.current = now
+      totalAngle.current = 0
+      const s = gs
+      s.set({
+        lap: s.lap + 1,
+        lastLap: lapMs,
+        bestLap: s.bestLap === null ? lapMs : Math.min(s.bestLap, lapMs),
+      })
+    }
+
+    // --- damage actually hurts: top speed + accel fall as damage rises ---
+    const handling = 1 - (gs.damage / 100) * 0.35
+    const maxV = BASE_TOP_SPEED * spec.topSpeed * handling
     if (speed > maxV) {
       const s = maxV / speed
       b.setLinvel({ x: v.x * s, y: v.y, z: v.z * s }, true)
@@ -74,7 +135,7 @@ export function Car() {
     // --- throttle / nitro / brake ---
     const boosting = k.nitro && k.forward && nitro.current > 0.5
     if (k.forward) {
-      const a = (boosting ? NITRO_ACCEL : ACCEL) * spec.accel
+      const a = (boosting ? NITRO_ACCEL : ACCEL) * spec.accel * handling
       b.applyImpulse({ x: tmpDir.x * a * dt, y: 0, z: tmpDir.z * a * dt }, true)
     }
     if (k.back) {
@@ -97,25 +158,21 @@ export function Car() {
 
     // --- manual reset ---
     if (k.reset) {
-      resetCar(b)
-      useGame.getState().resetDamage()
+      resetRace(b)
     }
 
-    // --- chase camera ---
-    const p = b.translation()
-    tmpCam.set(0, 4.4, 10.5).applyQuaternion(tmpQuat)
-    state.camera.position.lerp(
-      new THREE.Vector3(p.x + tmpCam.x, p.y + tmpCam.y, p.z + tmpCam.z),
-      1 - Math.pow(0.0005, dt),
-    )
-    state.camera.lookAt(p.x, p.y + 1.4, p.z)
-
-    // --- HUD sync, throttled to ~10Hz ---
+    // --- engine sound + HUD sync, throttled to ~10Hz ---
+    const speedKmh = Math.round(Math.min(speed, maxV) * 3.6)
+    updateEngine(speedKmh, boosting, gs.muted, false)
     frame.current += 1
     if (frame.current % 6 === 0) {
+      const p = b.translation()
       useGame.getState().set({
-        speed: Math.round(Math.min(speed, maxV) * 3.6),
+        speed: speedKmh,
         nitro: Math.round(nitro.current),
+        lapTime: Math.round(performance.now() - lapStart.current),
+        posX: p.x,
+        posZ: p.z,
       })
     }
   })
